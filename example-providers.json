@@ -1,0 +1,39 @@
+{
+  "providers": {
+    "anthropic": {
+      "name": "Anthropic",
+      "baseURL": "https://api.anthropic.com/v1",
+      "envKey": "ANTHROPIC_API_KEY"
+    },
+    "azure": {
+      "name": "Azure OpenAI",
+      "baseURL": "https://{your-resource-name}.openai.azure.com/openai/deployments/{deployment-id}",
+      "envKey": "AZURE_OPENAI_API_KEY"
+    },
+    "cohere": {
+      "name": "Cohere",
+      "baseURL": "https://api.cohere.ai/v1",
+      "envKey": "COHERE_API_KEY"
+    },
+    "huggingface": {
+      "name": "HuggingFace Inference API",
+      "baseURL": "https://api-inference.huggingface.co/models",
+      "envKey": "HUGGINGFACE_API_KEY"
+    },
+    "anyscale": {
+      "name": "Anyscale",
+      "baseURL": "https://api.endpoints.anyscale.com/v1",
+      "envKey": "ANYSCALE_API_KEY"
+    },
+    "together": {
+      "name": "Together AI",
+      "baseURL": "https://api.together.xyz/v1",
+      "envKey": "TOGETHER_API_KEY"
+    },
+    "localai": {
+      "name": "LocalAI",
+      "baseURL": "http://localhost:8080/v1",
+      "envKey": "LOCALAI_API_KEY"
+    }
+  }
+}

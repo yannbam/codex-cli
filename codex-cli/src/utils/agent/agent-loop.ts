@@ -686,7 +686,11 @@ export class AgentLoop {
                 ? (params: ResponseCreateParams) => {
                     // For OpenAI provider, log the request first
                     if (apiLogger.isEnabled()) {
-                      apiLogger.logRequest(requestId, params, null, "agent-loop.ts run() for OpenAI provider");
+                      apiLogger.logResponsesRequest(
+                        requestId, 
+                        params,
+                        `agent-loop.ts:run():OpenAI-provider:${this.generation}:${Date.now()}`
+                      );
                     }
                     
                     // Then make the API call
@@ -694,13 +698,13 @@ export class AgentLoop {
                     // The response will be logged later in the flush() function
                   }
                 : (params: ResponseCreateParams) => {
-                    // For non-OpenAI providers, the request logging is handled 
-                    // inside responsesCreateViaChatCompletions
+                    // For non-OpenAI providers, we use Chat Completions API with translation
+                    // We pass the requestId to allow the function to correlate request and response
                     return responsesCreateViaChatCompletions(
                       this.oai,
                       params as ResponseCreateParams & { stream: true },
-                      requestId, // Pass the request ID for later response logging
-                      "agent-loop.ts run() for non-OpenAI provider"
+                      requestId, // Pass the request ID for correlation
+                      `agent-loop.ts:run():non-OpenAI-provider:${this.generation}:${Date.now()}`
                     );
                   };
             log(
@@ -1213,11 +1217,10 @@ export class AgentLoop {
                 this.oai.responses.retrieve(lastResponseId).then(finalResponse => {
                   if (finalResponse) {
                     // Log the complete response
-                    apiLogger.logResponse(
+                    apiLogger.logResponsesResponse(
                       requestId, 
-                      null, 
                       finalResponse, 
-                      "agent-loop.ts flush() response callback for OpenAI provider"
+                      `agent-loop.ts:flush():OpenAI-provider:${thisGeneration}:${Date.now()}`
                     );
                   }
                 }).catch(err => {

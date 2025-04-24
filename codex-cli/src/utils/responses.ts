@@ -329,9 +329,14 @@ async function responsesCreateViaChatCompletions(
   // Generate a new request ID if one wasn't provided
   const logRequestId = requestId || (apiLogger.isEnabled() ? apiLogger.generateRequestId() : "");
   
-  // Log the request part first
+  // Log the request part first - for non-OpenAI providers
   if (apiLogger.isEnabled()) {
-    apiLogger.logRequest(logRequestId, input, chatInput, `responses.ts responsesCreateViaChatCompletions (from: ${debugInfo})`);
+    apiLogger.logChatCompletionsRequest(
+      logRequestId, 
+      input,  // Original Responses API request
+      chatInput,  // Translated Chat Completions request
+      `responses.ts:responsesCreateViaChatCompletions:request:${Date.now()}:${debugInfo || "unspecified"}`
+    );
   }
   
   const completion = await createCompletion(openai, input);
@@ -346,11 +351,11 @@ async function responsesCreateViaChatCompletions(
     // Log the response part
     if (apiLogger.isEnabled()) {
       // For non-streaming, we can log the response immediately
-      apiLogger.logResponse(
+      apiLogger.logChatCompletionsResponse(
         logRequestId, 
-        chatResponse, 
-        finalResponse, 
-        `responses.ts responsesCreateViaChatCompletions non-streaming (from: ${debugInfo})`
+        chatResponse,  // Original Chat Completions API response
+        finalResponse,  // Translated Responses API response
+        `responses.ts:responsesCreateViaChatCompletions:non-streaming-response:${Date.now()}:${debugInfo || "unspecified"}`
       );
     }
     
@@ -770,12 +775,12 @@ async function* streamResponses(
         usage: usage
       };
       
-      // Use the new separated logging approach with the requestId passed from the agent-loop
-      apiLogger.logResponse(
+      // Log the complete streaming response after all chunks are processed
+      apiLogger.logChatCompletionsResponse(
         requestId, 
-        chatResponse, 
-        finalResponse, 
-        `responses.ts streamResponses end of streaming (from: ${debugInfo})`
+        chatResponse,  // Original Chat Completions API response
+        finalResponse,  // Translated Responses API response
+        `responses.ts:streamResponses:streaming-complete:${Date.now()}:${debugInfo || "unspecified"}`
       );
     }
 

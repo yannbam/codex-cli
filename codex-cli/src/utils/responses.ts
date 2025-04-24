@@ -335,7 +335,7 @@ async function responsesCreateViaChatCompletions(
       logRequestId, 
       input,  // Original Responses API request
       chatInput,  // Translated Chat Completions request
-      `responses.ts:responsesCreateViaChatCompletions:request:${Date.now()}:${debugInfo || "unspecified"}`
+      `responses.ts:responsesCreateViaChatCompletions:request:${Date.now()}:unspecified`
     );
   }
   
@@ -355,7 +355,7 @@ async function responsesCreateViaChatCompletions(
         logRequestId, 
         chatResponse,  // Original Chat Completions API response
         finalResponse,  // Translated Responses API response
-        `responses.ts:responsesCreateViaChatCompletions:non-streaming-response:${Date.now()}:${debugInfo || "unspecified"}`
+        `responses.ts:responsesCreateViaChatCompletions:non-streaming-response:${Date.now()}:unspecified`
       );
     }
     
@@ -363,7 +363,7 @@ async function responsesCreateViaChatCompletions(
   } else {
     // For streaming responses, we'll pass the requestId to allow logging the complete response
     // after streaming finishes
-    return streamResponses(input, completion as AsyncIterable<OpenAI.ChatCompletionChunk>, logRequestId, debugInfo);
+    return streamResponses(input, completion as AsyncIterable<OpenAI.ChatCompletionChunk>, logRequestId);
   }
 }
 
@@ -499,7 +499,6 @@ async function* streamResponses(
   input: ResponseCreateInput,
   completion: AsyncIterable<OpenAI.ChatCompletionChunk>,
   requestId?: string,
-  debugInfo: string = "unspecified"
 ): AsyncGenerator<ResponseEvent> {
   const fullMessages = getFullMessages(input);
 
@@ -780,7 +779,7 @@ async function* streamResponses(
         requestId, 
         chatResponse,  // Original Chat Completions API response
         finalResponse,  // Translated Responses API response
-        `responses.ts:streamResponses:streaming-complete:${Date.now()}:${debugInfo || "unspecified"}`
+        `responses.ts:streamResponses:streaming-complete:${Date.now()}:unspecified}`
       );
     }
 

@@ -4,6 +4,8 @@ import type {
   Response,
 } from "openai/resources/responses/responses";
 
+import { getApiLogger } from "./api-logger.js";
+
 // Define interfaces based on OpenAI API documentation
 type ResponseCreateInput = ResponseCreateParams;
 type ResponseOutput = Response;
@@ -301,7 +303,33 @@ async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput,
 ): Promise<ResponseOutput | AsyncGenerator<ResponseEvent>> {
+  const apiLogger = getApiLogger();
+  const chatInput = {
+    model: input.model,
+    messages: getFullMessages(input),
+    tools: convertTools(input.tools),
+    temperature: input.temperature,
+    top_p: input.top_p,
+    tool_choice: (input.tool_choice === "auto"
+      ? "auto"
+      : input.tool_choice) as OpenAI.Chat.Completions.ChatCompletionCreateParams["tool_choice"],
+    stream: input.stream || false,
+    user: input.user,
+    metadata: input.metadata,
+  };
+  
+  // Log the Chat Completions API request
+  if (apiLogger.isEnabled()) {
+    apiLogger.logChatCompletionsApi(chatInput, null);
+  }
+  
   const completion = await createCompletion(openai, input);
+  
+  // For non-streaming responses, log the response immediately
+  if (!input.stream && apiLogger.isEnabled()) {
+    apiLogger.logChatCompletionsApi(chatInput, completion);
+  }
+  
   if (input.stream) {
     return streamResponses(
       input,
@@ -704,6 +732,23 @@ async function* streamResponses(
       previous_response_id: input.previous_response_id ?? null,
       messages: newHistory,
     });
+
+    // Log the full final response for streaming Chat Completions
+    const apiLogger = getApiLogger();
+    if (apiLogger.isEnabled()) {
+      const chatInput = {
+        model: input.model,
+        messages: fullMessages,
+        tools: convertTools(input.tools),
+        temperature: input.temperature,
+        top_p: input.top_p,
+        tool_choice: input.tool_choice,
+        stream: true,
+        user: input.user,
+        metadata: input.metadata,
+      };
+      apiLogger.logChatCompletionsApi(chatInput, finalResponse);
+    }
 
     yield { type: "response.completed", response: finalResponse };
   }

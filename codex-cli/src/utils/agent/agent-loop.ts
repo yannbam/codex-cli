@@ -11,6 +11,7 @@ import type {
 } from "openai/resources/responses/responses.mjs";
 import type { Reasoning } from "openai/resources.mjs";
 
+import { getApiLogger } from "../api-logger.js";
 import { OPENAI_TIMEOUT_MS, getApiKey, getBaseUrl } from "../config.js";
 import { log } from "../logger/log.js";
 import { parseToolCallArguments } from "../parsers.js";
@@ -665,11 +666,25 @@ export class AgentLoop {
               .filter(Boolean)
               .join("\n");
 
+            const apiLogger = getApiLogger();
+            
             const responseCall =
               !this.config.provider ||
               this.config.provider?.toLowerCase() === "openai"
-                ? (params: ResponseCreateParams) =>
-                    this.oai.responses.create(params)
+                ? (params: ResponseCreateParams) => {
+                    // Log request for Responses API
+                    if (apiLogger.isEnabled()) {
+                      apiLogger.logResponsesApi(params, null);
+                    }
+                    
+                    return this.oai.responses.create(params).then(response => {
+                      // Log response for Responses API
+                      if (apiLogger.isEnabled()) {
+                        apiLogger.logResponsesApi(params, response);
+                      }
+                      return response;
+                    });
+                  }
                 : (params: ResponseCreateParams) =>
                     responsesCreateViaChatCompletions(
                       this.oai,
@@ -679,12 +694,12 @@ export class AgentLoop {
               `instructions (length ${mergedInstructions.length}): ${mergedInstructions}`,
             );
 
-            // eslint-disable-next-line no-await-in-loop
-            stream = await responseCall({
+            // Prepare the request parameters
+            const requestParams: ResponseCreateParams = {
               model: this.model,
               instructions: mergedInstructions,
               input: turnInput,
-              stream: true,
+              stream: true as const,
               parallel_tool_calls: false,
               reasoning,
               ...(this.config.flexMode ? { service_tier: "flex" } : {}),
@@ -700,7 +715,10 @@ export class AgentLoop {
               // the model ignoring the available tools and responding with
               // plain text instead (resulting in a missing tool‑call).
               tool_choice: "auto",
-            });
+            };
+
+            // eslint-disable-next-line no-await-in-loop
+            stream = await responseCall(requestParams);
             break;
           } catch (error) {
             const isTimeout = error instanceof APIConnectionTimeoutError;
@@ -1033,11 +1051,25 @@ export class AgentLoop {
                 .filter(Boolean)
                 .join("\n");
 
+              const apiLogger = getApiLogger();
+              
               const responseCall =
                 !this.config.provider ||
                 this.config.provider?.toLowerCase() === "openai"
-                  ? (params: ResponseCreateParams) =>
-                      this.oai.responses.create(params)
+                  ? (params: ResponseCreateParams) => {
+                      // Log request for Responses API
+                      if (apiLogger.isEnabled()) {
+                        apiLogger.logResponsesApi(params, null);
+                      }
+                      
+                      return this.oai.responses.create(params).then(response => {
+                        // Log response for Responses API
+                        if (apiLogger.isEnabled()) {
+                          apiLogger.logResponsesApi(params, response);
+                        }
+                        return response;
+                      });
+                    }
                   : (params: ResponseCreateParams) =>
                       responsesCreateViaChatCompletions(
                         this.oai,
@@ -1048,12 +1080,13 @@ export class AgentLoop {
                 "agentLoop.run(): responseCall(1): turnInput: " +
                   JSON.stringify(turnInput),
               );
-              // eslint-disable-next-line no-await-in-loop
-              stream = await responseCall({
+              
+              // Prepare the request parameters
+              const requestParams: ResponseCreateParams = {
                 model: this.model,
                 instructions: mergedInstructions,
                 input: turnInput,
-                stream: true,
+                stream: true as const,
                 parallel_tool_calls: false,
                 reasoning,
                 ...(this.config.flexMode ? { service_tier: "flex" } : {}),
@@ -1065,7 +1098,10 @@ export class AgentLoop {
                     }),
                 tools: [shellTool],
                 tool_choice: "auto",
-              });
+              };
+              
+              // eslint-disable-next-line no-await-in-loop
+              stream = await responseCall(requestParams);
 
               this.currentStream = stream;
               // Continue to outer while to consume new stream.

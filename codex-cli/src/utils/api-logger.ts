@@ -15,6 +15,7 @@ export class ApiLogger {
   private logFile: string;
   private enabled: boolean;
   private sessionId: string;
+  private disableResponseStorage: boolean;
   private pendingRequests: Map<string, {
     timestamp: string;
     caller: string;
@@ -41,6 +42,7 @@ export class ApiLogger {
     // Setup log file
     this.logFile = path.join(logsDir, `api-${this.sessionId}.log`);
     this.enabled = process.env["LOG_API_RAW"] === "true";
+    this.disableResponseStorage = false;
     this.pendingRequests = new Map();
     
     if (this.enabled) {
@@ -58,6 +60,27 @@ export class ApiLogger {
    */
   public isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /**
+   * Set the disableResponseStorage flag
+   * Required by agent-loop.ts
+   */
+  public setDisableResponseStorage(disabled: boolean): void {
+    if (this.disableResponseStorage !== disabled && this.enabled) {
+      this.disableResponseStorage = disabled;
+      if (disabled) {
+        try {
+          let logEntry = `[${this.getTimestamp()}]\n\n`;
+          logEntry += `>>> --disable-response-storage mode active\n\n`;
+          logEntry += `/====================================================\\\n\n`;
+          this.appendToLog(logEntry);
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error("Error logging disable-response-storage mode", error);
+        }
+      }
+    }
   }
 
   /**

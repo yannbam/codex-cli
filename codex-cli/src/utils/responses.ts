@@ -295,19 +295,19 @@ async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput & { stream: true },
   requestId?: string,
-  debugInfo: string = "unspecified"
+  caller?: string
 ): Promise<AsyncGenerator<ResponseEvent>>;
 async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput & { stream?: false },
   requestId?: string,
-  debugInfo: string = "unspecified"
+  caller?: string
 ): Promise<ResponseOutput>;
 async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput,
   requestId?: string,
-  debugInfo: string = "unspecified"
+  caller?: string
 ): Promise<ResponseOutput | AsyncGenerator<ResponseEvent>> {
   const apiLogger = getApiLogger();
   

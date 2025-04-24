@@ -1083,7 +1083,11 @@ export class AgentLoop {
                         // For OpenAI provider, there's no translation, so log only the direct OpenAI Responses API
                         // We pass null for chatRequest and chatResponse to indicate no translation happened
                         if (apiLogger.isEnabled()) {
-                          apiLogger.logApiCycle(params, null, null, response);
+                          apiLogger.logResponsesRequest(
+                            requestId, 
+                            params,
+                            `agent-loop.ts:run():retry:OpenAI-provider:${this.generation}:${Date.now()}`
+                          );
                         }
                         return response;
                       });

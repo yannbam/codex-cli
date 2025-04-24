@@ -319,6 +319,12 @@ export class AgentLoop {
       () => this.execAbortController?.abort(),
       { once: true },
     );
+    
+    // Set disable-response-storage flag in the API logger
+    const apiLogger = getApiLogger();
+    if (apiLogger.isEnabled()) {
+      apiLogger.setDisableResponseStorage(this.disableResponseStorage);
+    }
   }
 
   private async handleFunctionCall(

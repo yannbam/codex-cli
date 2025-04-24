@@ -26,7 +26,15 @@ function sanitizeData(data: ApiData | null): ApiData | null {
     return data;
   }
   
-  const clone = JSON.parse(JSON.stringify(data));
+  let clone;
+  try {
+    // Deep clone to avoid modifying the original
+    clone = JSON.parse(JSON.stringify(data));
+  } catch (e) {
+    // If an object can't be stringified (e.g., contains circular references),
+    // we'll do a shallow clone instead for safety
+    clone = { ...data };
+  }
   
   // Remove API keys from headers if present
   if (clone.headers) {
@@ -64,6 +72,12 @@ export class ApiLogger {
   private logFile: string;
   private enabled: boolean;
   private sessionId: string;
+  private pendingRequests: Map<string, {
+    timestamp: string;
+    request: ApiData;
+    chatRequest: ApiData | null;
+    cmdContext?: string;
+  }>;
 
   constructor() {
     const homeDir = os.homedir();
@@ -80,6 +94,9 @@ export class ApiLogger {
     // Create one log file for this session
     this.logFile = path.join(logsDir, `api-${this.sessionId}.log`);
     this.enabled = process.env["LOG_API_RAW"] === "true";
+    
+    // Track pending requests for correlation
+    this.pendingRequests = new Map();
     
     // Initialize empty log file
     if (this.enabled) {
@@ -98,6 +115,18 @@ export class ApiLogger {
     return this.enabled;
   }
 
+  // Method to capture command context that triggered the request
+  addRequestContext(requestId: string, context: string): void {
+    if (!this.enabled || !requestId) {
+      return;
+    }
+    
+    const pending = this.pendingRequests.get(requestId);
+    if (pending) {
+      pending.cmdContext = context;
+    }
+  }
+
   // Log entry for a full API cycle (combines responses & chat completions data)
   logApiCycle(
     responsesRequest: ApiData, 
@@ -110,6 +139,20 @@ export class ApiLogger {
     }
 
     try {
+      // Skip logging if we don't have a proper response yet
+      // This handles the streaming case where the response is not fully available yet
+      if (!responsesResponse || typeof responsesResponse !== 'object' || 
+          (Object.keys(responsesResponse).length === 1 && responsesResponse.controller !== undefined)) {
+        // Store the request for later when the full response is available
+        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+        this.pendingRequests.set(requestId, {
+          timestamp: getISOTimestamp(),
+          request: responsesRequest,
+          chatRequest
+        });
+        return;
+      }
+
       const timestamp = getISOTimestamp();
       const sanitizedResponsesRequest = sanitizeData(responsesRequest);
       const sanitizedChatRequest = sanitizeData(chatRequest);
@@ -118,12 +161,20 @@ export class ApiLogger {
       
       let logEntry = `[${timestamp}]\n\n`;
       
+      // Add model information or command context if available
+      if (responsesRequest && typeof responsesRequest === 'object') {
+        const model = responsesRequest.model;
+        if (model && typeof model === 'string') {
+          logEntry += `>>> ${model}\n\n`;
+        }
+      }
+      
       // 1. Responses format request (always included)
       logEntry += "RESPONSES FORMAT REQUEST\n";
       logEntry += `${JSON.stringify(sanitizedResponsesRequest, null, 2)}\n`;
       logEntry += "------------------------------------------------------\n\n";
       
-      // 2 & 3. Chat Completions format (only if provider != openai)
+      // 2 & 3. Chat Completions format (only if actually translated)
       if (chatRequest) {
         logEntry += "CHAT COMPLETIONS FORMAT REQUEST (TRANSLATED)\n";
         logEntry += `${JSON.stringify(sanitizedChatRequest, null, 2)}\n`;
@@ -161,6 +212,12 @@ export class ApiLogger {
     }
 
     try {
+      // Skip logging if we don't have a proper response yet (streaming case)
+      if (!response || typeof response !== 'object' || 
+          (Object.keys(response).length === 1 && response.controller !== undefined)) {
+        return;
+      }
+
       const timestamp = getISOTimestamp();
       const sanitizedRequest = sanitizeData(request);
       const sanitizedResponse = sanitizeData(response);
@@ -182,6 +239,12 @@ export class ApiLogger {
     }
 
     try {
+      // Skip logging if we don't have a proper response yet (streaming case)
+      if (!response || typeof response !== 'object' || 
+          (Object.keys(response).length === 1 && response.controller !== undefined)) {
+        return;
+      }
+
       const timestamp = getISOTimestamp();
       const sanitizedRequest = sanitizeData(request);
       const sanitizedResponse = sanitizeData(response);

@@ -678,7 +678,8 @@ export class AgentLoop {
                 ? (params: ResponseCreateParams) => {
                     // We'll log the complete cycle after getting the response
                     return this.oai.responses.create(params).then(response => {
-                      // For OpenAI provider, there's no translation, so log directly
+                      // For OpenAI provider, there's no translation, so log only the direct OpenAI Responses API
+                      // We pass null for chatRequest and chatResponse to indicate no translation happened
                       if (apiLogger.isEnabled()) {
                         apiLogger.logApiCycle(params, null, null, response);
                       }
@@ -686,6 +687,8 @@ export class AgentLoop {
                     });
                   }
                 : (params: ResponseCreateParams) =>
+                    // For non-OpenAI providers, we use the Chat Completions API with translation
+                    // The logging is handled inside responsesCreateViaChatCompletions
                     responsesCreateViaChatCompletions(
                       this.oai,
                       params as ResponseCreateParams & { stream: true },
@@ -1063,7 +1066,8 @@ export class AgentLoop {
                   ? (params: ResponseCreateParams) => {
                       // We'll log the complete cycle after getting the response
                       return this.oai.responses.create(params).then(response => {
-                        // For OpenAI provider, there's no translation, so log directly
+                        // For OpenAI provider, there's no translation, so log only the direct OpenAI Responses API
+                        // We pass null for chatRequest and chatResponse to indicate no translation happened
                         if (apiLogger.isEnabled()) {
                           apiLogger.logApiCycle(params, null, null, response);
                         }
@@ -1071,6 +1075,8 @@ export class AgentLoop {
                       });
                     }
                   : (params: ResponseCreateParams) =>
+                      // For non-OpenAI providers, we use the Chat Completions API with translation
+                      // The logging is handled inside responsesCreateViaChatCompletions
                       responsesCreateViaChatCompletions(
                         this.oai,
                         params as ResponseCreateParams & { stream: true },

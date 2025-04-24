@@ -339,6 +339,8 @@ async function responsesCreateViaChatCompletions(
     
     // Log the complete API cycle
     if (apiLogger.isEnabled()) {
+      // This function is responsible for the Chat Completions API translation,
+      // so we should log both original and translated formats
       apiLogger.logApiCycle(originalInput, chatInput, chatResponse, finalResponse);
     }
     
@@ -744,7 +746,7 @@ async function* streamResponses(
     if (apiLogger.isEnabled()) {
       // For the streaming case, construct the full API cycle:
       // 1. Original responses API request
-      // 2. Translated chat completions request
+      // 2. Translated chat completions request (since we're in responsesCreateViaChatCompletions)
       // 3. Final chat completions response (accumulated chunks)
       // 4. Final translated responses API response
       
@@ -774,6 +776,8 @@ async function* streamResponses(
         usage: usage
       };
       
+      // This is called only for non-OpenAI providers (through responsesCreateViaChatCompletions),
+      // so we should log both the original and translated formats
       apiLogger.logApiCycle(input, chatRequest, chatResponse, finalResponse);
     }
 

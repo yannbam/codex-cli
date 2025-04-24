@@ -177,9 +177,7 @@ export class ApiLogger {
       logEntry += "RESPONSES API REQUEST\n";
       logEntry += `${JSON.stringify(sanitizedRequest, null, 2)}\n`;
       logEntry += "------------------------------------------------------\n\n";
-      logEntry += "RESPONSES API RESPONSE\n";
-      logEntry += "Response will be logged separately after streaming completes\n\n";
-      logEntry += "/====================================================\\\n\n";
+
       
       this.appendToLog(logEntry);
     } catch (error) {
@@ -272,9 +270,6 @@ export class ApiLogger {
       logEntry += "------------------------------------------------------\n\n";
       logEntry += "CHAT COMPLETIONS API REQUEST (TRANSLATED)\n";
       logEntry += `${JSON.stringify(sanitizedChatRequest, null, 2)}\n`;
-      logEntry += "------------------------------------------------------\n\n";
-      logEntry += "CHAT COMPLETIONS/RESPONSES API RESPONSE\n";
-      logEntry += "Response will be logged separately after streaming completes\n\n";
       logEntry += "/====================================================\\\n\n";
       
       this.appendToLog(logEntry);

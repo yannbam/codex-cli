@@ -668,19 +668,19 @@ export class AgentLoop {
 
             const apiLogger = getApiLogger();
             
+            // For OpenAI provider we use Responses API directly
+            // For other providers we use Chat Completions API with translation
+            const isOpenAiProvider = !this.config.provider || 
+              this.config.provider?.toLowerCase() === "openai";
+            
             const responseCall =
-              !this.config.provider ||
-              this.config.provider?.toLowerCase() === "openai"
+              isOpenAiProvider
                 ? (params: ResponseCreateParams) => {
-                    // Log request for Responses API
-                    if (apiLogger.isEnabled()) {
-                      apiLogger.logResponsesApi(params, null);
-                    }
-                    
+                    // We'll log the complete cycle after getting the response
                     return this.oai.responses.create(params).then(response => {
-                      // Log response for Responses API
+                      // For OpenAI provider, there's no translation, so log directly
                       if (apiLogger.isEnabled()) {
-                        apiLogger.logResponsesApi(params, response);
+                        apiLogger.logApiCycle(params, null, null, response);
                       }
                       return response;
                     });
@@ -1053,19 +1053,19 @@ export class AgentLoop {
 
               const apiLogger = getApiLogger();
               
+              // For OpenAI provider we use Responses API directly
+              // For other providers we use Chat Completions API with translation
+              const isOpenAiProvider = !this.config.provider || 
+                this.config.provider?.toLowerCase() === "openai";
+              
               const responseCall =
-                !this.config.provider ||
-                this.config.provider?.toLowerCase() === "openai"
+                isOpenAiProvider
                   ? (params: ResponseCreateParams) => {
-                      // Log request for Responses API
-                      if (apiLogger.isEnabled()) {
-                        apiLogger.logResponsesApi(params, null);
-                      }
-                      
+                      // We'll log the complete cycle after getting the response
                       return this.oai.responses.create(params).then(response => {
-                        // Log response for Responses API
+                        // For OpenAI provider, there's no translation, so log directly
                         if (apiLogger.isEnabled()) {
-                          apiLogger.logResponsesApi(params, response);
+                          apiLogger.logApiCycle(params, null, null, response);
                         }
                         return response;
                       });

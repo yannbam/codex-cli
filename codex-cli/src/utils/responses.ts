@@ -304,6 +304,8 @@ async function responsesCreateViaChatCompletions(
   input: ResponseCreateInput,
 ): Promise<ResponseOutput | AsyncGenerator<ResponseEvent>> {
   const apiLogger = getApiLogger();
+  
+  // Build chat input
   const chatInput = {
     model: input.model,
     messages: getFullMessages(input),
@@ -318,28 +320,32 @@ async function responsesCreateViaChatCompletions(
     metadata: input.metadata,
   };
   
-  // Log the Chat Completions API request
-  if (apiLogger.isEnabled()) {
-    apiLogger.logChatCompletionsApi(chatInput, null);
-  }
+  // We'll store these to pass to the logApiCycle method later
+  const originalInput = input;
+  let chatResponse = null;
+  let finalResponse = null;
+  
+  // Log the Chat Completions API request (part of the cycle)
+  // We don't log the response here since we'll capture it in the completion variable
   
   const completion = await createCompletion(openai, input);
   
-  // For non-streaming responses, log the response immediately
-  if (!input.stream && apiLogger.isEnabled()) {
-    apiLogger.logChatCompletionsApi(chatInput, completion);
-  }
-  
-  if (input.stream) {
-    return streamResponses(
-      input,
-      completion as AsyncIterable<OpenAI.ChatCompletionChunk>,
-    );
+  if (!input.stream) {
+    // For non-streaming responses
+    chatResponse = completion;
+    
+    // Process the response
+    finalResponse = await nonStreamResponses(input, completion as unknown as OpenAI.Chat.Completions.ChatCompletion);
+    
+    // Log the complete API cycle
+    if (apiLogger.isEnabled()) {
+      apiLogger.logApiCycle(originalInput, chatInput, chatResponse, finalResponse);
+    }
+    
+    return finalResponse;
   } else {
-    return nonStreamResponses(
-      input,
-      completion as unknown as OpenAI.Chat.Completions.ChatCompletion,
-    );
+    // For streaming responses, return the generator
+    return streamResponses(input, completion as AsyncIterable<OpenAI.ChatCompletionChunk>);
   }
 }
 
@@ -736,7 +742,14 @@ async function* streamResponses(
     // Log the full final response for streaming Chat Completions
     const apiLogger = getApiLogger();
     if (apiLogger.isEnabled()) {
-      const chatInput = {
+      // For the streaming case, construct the full API cycle:
+      // 1. Original responses API request
+      // 2. Translated chat completions request
+      // 3. Final chat completions response (accumulated chunks)
+      // 4. Final translated responses API response
+      
+      // Build the chat request that was used
+      const chatRequest = {
         model: input.model,
         messages: fullMessages,
         tools: convertTools(input.tools),
@@ -747,7 +760,21 @@ async function* streamResponses(
         user: input.user,
         metadata: input.metadata,
       };
-      apiLogger.logChatCompletionsApi(chatInput, finalResponse);
+      
+      // For the chat response, construct something reasonable from the final state
+      const chatResponse = {
+        id: `chatcmpl-${responseId.replace('resp_', '')}`,
+        model: chunk.model || input.model,
+        choices: [
+          {
+            message: assistantMessage,
+            finish_reason: choice.finish_reason || "stop"
+          }
+        ],
+        usage: usage
+      };
+      
+      apiLogger.logApiCycle(input, chatRequest, chatResponse, finalResponse);
     }
 
     yield { type: "response.completed", response: finalResponse };

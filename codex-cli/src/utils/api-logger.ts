@@ -1,3 +1,4 @@
+// Clean approach for ApiLogger
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -76,9 +77,6 @@ export class ApiLogger {
   private pendingRequests: Map<string, {
     timestamp: string;
     request: ApiData;
-    chatRequest: ApiData | null;
-    cmdContext?: string;
-    completed?: boolean;
   }>;
 
   constructor() {
@@ -96,9 +94,7 @@ export class ApiLogger {
     // Create one log file for this session
     this.logFile = path.join(logsDir, `api-${this.sessionId}.log`);
     this.enabled = process.env["LOG_API_RAW"] === "true";
-    this.disableResponseStorage = false; // Will be set via setDisableResponseStorage
-    
-    // Track pending requests for correlation
+    this.disableResponseStorage = false;
     this.pendingRequests = new Map();
     
     // Initialize empty log file
@@ -137,21 +133,9 @@ export class ApiLogger {
     return this.enabled;
   }
 
-  // Method to capture command context that triggered the request
-  addRequestContext(requestId: string, context: string): void {
-    if (!this.enabled || !requestId) {
-      return;
-    }
-    
-    const pending = this.pendingRequests.get(requestId);
-    if (pending) {
-      pending.cmdContext = context;
-    }
-  }
-
-  // Method to handle incomplete responses by logging a placeholder
-  logIncompleteResponse(requestId: string, request: ApiData): void {
-    if (!this.enabled || !requestId) {
+  // Log a request separately - only used when we can't log the full cycle immediately
+  logRequest(requestId: string, request: ApiData): void {
+    if (!this.enabled) {
       return;
     }
 
@@ -159,20 +143,13 @@ export class ApiLogger {
       const sanitizedRequest = sanitizeData(request);
       const timestamp = getISOTimestamp();
 
-      // Don't log if we already have this request in progress
-      if (this.pendingRequests.has(requestId)) {
-        return;
-      }
-
-      // Store the request for potential later completion
+      // Store the request for later matching with response
       this.pendingRequests.set(requestId, {
         timestamp,
-        request,
-        chatRequest: null,
-        completed: false
+        request
       });
 
-      // Write placeholder entry to log
+      // Write request entry to log
       let logEntry = `[${timestamp}]\n\n`;
       
       // Add disabled storage note if applicable
@@ -184,18 +161,18 @@ export class ApiLogger {
       logEntry += `${JSON.stringify(sanitizedRequest, null, 2)}\n`;
       logEntry += "------------------------------------------------------\n\n";
       logEntry += "RESPONSES FORMAT RESPONSE\n";
-      logEntry += "Response data pending - streaming in progress\n\n";
+      logEntry += "Response will be logged separately after streaming completes\n\n";
       logEntry += "/====================================================\\\n\n";
       
       fs.appendFileSync(this.logFile, logEntry);
     } catch (error) {
       // Silent failure
       // eslint-disable-next-line no-console
-      console.error("Error logging incomplete response", error);
+      console.error("Error logging request", error);
     }
   }
 
-  // Log entry for a full API cycle (combines responses & chat completions data)
+  // Log a complete API cycle (both request and response)
   logApiCycle(
     responsesRequest: ApiData, 
     chatRequest: ApiData | null, 
@@ -207,18 +184,13 @@ export class ApiLogger {
     }
 
     try {
-      // Check if the response is actually a controller or incomplete object
-      const isStreamController = 
-        responsesResponse === null || 
-        typeof responsesResponse !== 'object' ||
-        Object.keys(responsesResponse).length === 0 ||
-        (Object.keys(responsesResponse).length === 1 && responsesResponse.controller !== undefined);
-
-      // If we have an empty response or controller, don't log the full cycle yet
-      if (isStreamController) {
-        // Generate a unique ID for this request
+      // Skip logging if we have a controller object instead of a real response
+      if (responsesResponse && 
+          typeof responsesResponse === 'object' && 
+          responsesResponse.controller !== undefined) {
+        // This is a stream controller, we'll log the request only and log response later
         const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-        this.logIncompleteResponse(requestId, responsesRequest);
+        this.logRequest(requestId, responsesRequest);
         return;
       }
 
@@ -268,88 +240,6 @@ export class ApiLogger {
       // Silent failure - don't disrupt normal operation
       // eslint-disable-next-line no-console
       console.error("Error logging API cycle", error);
-    }
-  }
-
-  // Legacy method for compatibility - logs only Responses API data
-  logResponsesApi(request: ApiData, response: ApiData | null): void {
-    if (!this.enabled) {
-      return;
-    }
-
-    try {
-      // Skip logging if we don't have a proper response yet (streaming case)
-      if (!response || typeof response !== 'object' || 
-          Object.keys(response).length === 0 ||
-          (Object.keys(response).length === 1 && response.controller !== undefined)) {
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-        this.logIncompleteResponse(requestId, request);
-        return;
-      }
-
-      const timestamp = getISOTimestamp();
-      const sanitizedRequest = sanitizeData(request);
-      const sanitizedResponse = sanitizeData(response);
-      
-      let logEntry = `[${timestamp}]\n\n`;
-      
-      if (this.disableResponseStorage) {
-        logEntry += `>>> Response storage disabled\n\n`;
-      }
-      
-      logEntry += "RESPONSES API REQUEST\n";
-      logEntry += `${JSON.stringify(sanitizedRequest, null, 2)}\n`;
-      logEntry += "------------------------------------------------------\n";
-      logEntry += "RESPONSES API RESPONSE\n";
-      logEntry += `${JSON.stringify(sanitizedResponse, null, 2)}\n\n`;
-      logEntry += "/====================================================\\\n\n";
-      
-      fs.appendFileSync(this.logFile, logEntry);
-    } catch (error) {
-      // Silent failure
-      // eslint-disable-next-line no-console
-      console.error("Error logging Responses API", error);
-    }
-  }
-
-  // Legacy method for compatibility - logs only Chat Completions API data
-  logChatCompletionsApi(request: ApiData, response: ApiData | null): void {
-    if (!this.enabled) {
-      return;
-    }
-
-    try {
-      // Skip logging if we don't have a proper response yet (streaming case)
-      if (!response || typeof response !== 'object' || 
-          Object.keys(response).length === 0 ||
-          (Object.keys(response).length === 1 && response.controller !== undefined)) {
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-        this.logIncompleteResponse(requestId, request);
-        return;
-      }
-
-      const timestamp = getISOTimestamp();
-      const sanitizedRequest = sanitizeData(request);
-      const sanitizedResponse = sanitizeData(response);
-      
-      let logEntry = `[${timestamp}]\n\n`;
-      
-      if (this.disableResponseStorage) {
-        logEntry += `>>> Response storage disabled\n\n`;
-      }
-      
-      logEntry += "CHAT COMPLETIONS API REQUEST\n";
-      logEntry += `${JSON.stringify(sanitizedRequest, null, 2)}\n`;
-      logEntry += "------------------------------------------------------\n";
-      logEntry += "CHAT COMPLETIONS API RESPONSE\n";
-      logEntry += `${JSON.stringify(sanitizedResponse, null, 2)}\n\n`;
-      logEntry += "/====================================================\\\n\n";
-      
-      fs.appendFileSync(this.logFile, logEntry);
-    } catch (error) {
-      // Silent failure
-      // eslint-disable-next-line no-console
-      console.error("Error logging Chat Completions API", error);
     }
   }
 }

@@ -84,7 +84,15 @@ export class ApiLogger {
   }
 
   /**
-   * Generate a unique request ID
+   * Generate a unique request ID (backward compatibility method)
+   * @deprecated Use generateId instead
+   */
+  public generateRequestId(): string {
+    return this.generateId("req");
+  }
+  
+  /**
+   * Generate a unique ID with optional prefix
    */
   public generateId(prefix: string = "req"): string {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;

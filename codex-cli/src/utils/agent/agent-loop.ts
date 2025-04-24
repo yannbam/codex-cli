@@ -442,6 +442,10 @@ export class AgentLoop {
     // and terminate the current run gracefully. The calling UI can then let
     // the user retry the request if desired.
     // ---------------------------------------------------------------------
+    
+    // Generate a request ID for API logging
+    const apiLogger = getApiLogger();
+    const requestId = apiLogger.isEnabled() ? apiLogger.generateRequestId() : "";
 
     try {
       if (this.terminated) {
@@ -672,8 +676,6 @@ export class AgentLoop {
               .filter(Boolean)
               .join("\n");
 
-            const apiLogger = getApiLogger();
-            
             // For OpenAI provider we use Responses API directly
             // For other providers we use Chat Completions API with translation
             const isOpenAiProvider = !this.config.provider || 
@@ -682,23 +684,24 @@ export class AgentLoop {
             const responseCall =
               isOpenAiProvider
                 ? (params: ResponseCreateParams) => {
-                    // We'll log the complete cycle after getting the response
-                    return this.oai.responses.create(params).then(response => {
-                      // For OpenAI provider, there's no translation, so log only the direct OpenAI Responses API
-                      // We pass null for chatRequest and chatResponse to indicate no translation happened
-                      if (apiLogger.isEnabled()) {
-                        apiLogger.logApiCycle(params, null, null, response);
-                      }
-                      return response;
-                    });
+                    // For OpenAI provider, log the request first
+                    if (apiLogger.isEnabled()) {
+                      apiLogger.logRequest(requestId, params);
+                    }
+                    
+                    // Then make the API call
+                    return this.oai.responses.create(params);
+                    // The response will be logged later in the flush() function
                   }
-                : (params: ResponseCreateParams) =>
-                    // For non-OpenAI providers, we use the Chat Completions API with translation
-                    // The logging is handled inside responsesCreateViaChatCompletions
-                    responsesCreateViaChatCompletions(
+                : (params: ResponseCreateParams) => {
+                    // For non-OpenAI providers, the request logging is handled 
+                    // inside responsesCreateViaChatCompletions
+                    return responsesCreateViaChatCompletions(
                       this.oai,
                       params as ResponseCreateParams & { stream: true },
+                      requestId // Pass the request ID for later response logging
                     );
+                  };
             log(
               `instructions (length ${mergedInstructions.length}): ${mergedInstructions}`,
             );
@@ -1191,6 +1194,38 @@ export class AgentLoop {
             if (item) {
               this.onItem(item);
             }
+          }
+          
+          // Now that streaming is 100% complete, log the API response
+          // This is the optimal place to log the response as we're guaranteed 
+          // that streaming has finished successfully
+          const apiLogger = getApiLogger();
+          if (apiLogger.isEnabled() && lastResponseId) {
+            // For OpenAI provider with direct Responses API
+            const isOpenAiProvider = !this.config.provider || 
+              this.config.provider?.toLowerCase() === "openai";
+            
+            if (isOpenAiProvider) {
+              // For OpenAI, we can get the response via the ID
+              try {
+                // We retrieve the response using the lastResponseId
+                this.oai.responses.retrieve(lastResponseId).then(finalResponse => {
+                  if (finalResponse) {
+                    // Log the complete response
+                    apiLogger.logResponse(requestId, null, finalResponse);
+                  }
+                }).catch(err => {
+                  // If retrieve fails, log the error but don't disrupt operation
+                  // eslint-disable-next-line no-console
+                  console.error("Error retrieving API response for logging", err);
+                });
+              } catch (error) {
+                // Silent failure - don't disrupt normal operation
+                // eslint-disable-next-line no-console
+                console.error("Error logging API response", error);
+              }
+            }
+            // For non-OpenAI providers, the response logging happens in responsesCreateViaChatCompletions
           }
         }
 

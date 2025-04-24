@@ -294,14 +294,17 @@ const createCompletion = (openai: OpenAI, input: ResponseCreateInput) => {
 async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput & { stream: true },
+  requestId?: string
 ): Promise<AsyncGenerator<ResponseEvent>>;
 async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput & { stream?: false },
+  requestId?: string
 ): Promise<ResponseOutput>;
 async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput,
+  requestId?: string
 ): Promise<ResponseOutput | AsyncGenerator<ResponseEvent>> {
   const apiLogger = getApiLogger();
   
@@ -320,34 +323,34 @@ async function responsesCreateViaChatCompletions(
     metadata: input.metadata,
   };
   
-  // We'll store these to pass to the logApiCycle method later
-  const originalInput = input;
-  let chatResponse = null;
-  let finalResponse = null;
+  // Generate a new request ID if one wasn't provided
+  const logRequestId = requestId || (apiLogger.isEnabled() ? apiLogger.generateRequestId() : "");
   
-  // Log the Chat Completions API request (part of the cycle)
-  // We don't log the response here since we'll capture it in the completion variable
+  // Log the request part first
+  if (apiLogger.isEnabled()) {
+    apiLogger.logRequest(logRequestId, input, chatInput);
+  }
   
   const completion = await createCompletion(openai, input);
   
   if (!input.stream) {
     // For non-streaming responses
-    chatResponse = completion;
+    const chatResponse = completion;
     
     // Process the response
-    finalResponse = await nonStreamResponses(input, completion as unknown as OpenAI.Chat.Completions.ChatCompletion);
+    const finalResponse = await nonStreamResponses(input, completion as unknown as OpenAI.Chat.Completions.ChatCompletion);
     
-    // Log the complete API cycle
+    // Log the response part
     if (apiLogger.isEnabled()) {
-      // This function is responsible for the Chat Completions API translation,
-      // so we should log both original and translated formats
-      apiLogger.logApiCycle(originalInput, chatInput, chatResponse, finalResponse);
+      // For non-streaming, we can log the response immediately
+      apiLogger.logResponse(logRequestId, chatResponse, finalResponse);
     }
     
     return finalResponse;
   } else {
-    // For streaming responses, return the generator
-    return streamResponses(input, completion as AsyncIterable<OpenAI.ChatCompletionChunk>);
+    // For streaming responses, we'll pass the requestId to allow logging the complete response
+    // after streaming finishes
+    return streamResponses(input, completion as AsyncIterable<OpenAI.ChatCompletionChunk>, logRequestId);
   }
 }
 
@@ -482,6 +485,7 @@ async function nonStreamResponses(
 async function* streamResponses(
   input: ResponseCreateInput,
   completion: AsyncIterable<OpenAI.ChatCompletionChunk>,
+  requestId?: string
 ): AsyncGenerator<ResponseEvent> {
   const fullMessages = getFullMessages(input);
 
@@ -741,28 +745,9 @@ async function* streamResponses(
       messages: newHistory,
     });
 
-    // Log the full final response for streaming Chat Completions
+    // Log the complete response after streaming is finished
     const apiLogger = getApiLogger();
-    if (apiLogger.isEnabled()) {
-      // For the streaming case, construct the full API cycle:
-      // 1. Original responses API request
-      // 2. Translated chat completions request (since we're in responsesCreateViaChatCompletions)
-      // 3. Final chat completions response (accumulated chunks)
-      // 4. Final translated responses API response
-      
-      // Build the chat request that was used
-      const chatRequest = {
-        model: input.model,
-        messages: fullMessages,
-        tools: convertTools(input.tools),
-        temperature: input.temperature,
-        top_p: input.top_p,
-        tool_choice: input.tool_choice,
-        stream: true,
-        user: input.user,
-        metadata: input.metadata,
-      };
-      
+    if (apiLogger.isEnabled() && requestId) {
       // For the chat response, construct something reasonable from the final state
       const chatResponse = {
         id: `chatcmpl-${responseId.replace('resp_', '')}`,
@@ -776,9 +761,8 @@ async function* streamResponses(
         usage: usage
       };
       
-      // This is called only for non-OpenAI providers (through responsesCreateViaChatCompletions),
-      // so we should log both the original and translated formats
-      apiLogger.logApiCycle(input, chatRequest, chatResponse, finalResponse);
+      // Use the new separated logging approach with the requestId passed from the agent-loop
+      apiLogger.logResponse(requestId, chatResponse, finalResponse);
     }
 
     yield { type: "response.completed", response: finalResponse };

@@ -77,6 +77,7 @@ export class ApiLogger {
   private pendingRequests: Map<string, {
     timestamp: string;
     request: ApiData;
+    chatRequest?: ApiData | null;
   }>;
 
   constructor() {
@@ -133,20 +134,38 @@ export class ApiLogger {
     return this.enabled;
   }
 
-  // Log a request separately - only used when we can't log the full cycle immediately
-  logRequest(requestId: string, request: ApiData): void {
+  /**
+   * Generate a unique request ID
+   */
+  generateRequestId(): string {
+    return `req_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  }
+
+  /**
+   * Log a request separately - to be matched with a response later
+   * @param requestId Unique identifier for this request
+   * @param request The API request data to log
+   * @param chatRequest Optional translated chat request for non-OpenAI providers
+   */
+  logRequest(
+    requestId: string, 
+    request: ApiData, 
+    chatRequest: ApiData | null = null
+  ): void {
     if (!this.enabled) {
       return;
     }
 
     try {
       const sanitizedRequest = sanitizeData(request);
+      const sanitizedChatRequest = sanitizeData(chatRequest);
       const timestamp = getISOTimestamp();
 
       // Store the request for later matching with response
       this.pendingRequests.set(requestId, {
         timestamp,
-        request
+        request,
+        chatRequest
       });
 
       // Write request entry to log
@@ -159,6 +178,14 @@ export class ApiLogger {
       
       logEntry += "RESPONSES FORMAT REQUEST\n";
       logEntry += `${JSON.stringify(sanitizedRequest, null, 2)}\n`;
+      
+      // Include chat request if provided (for non-OpenAI providers)
+      if (chatRequest) {
+        logEntry += "------------------------------------------------------\n\n";
+        logEntry += "CHAT COMPLETIONS FORMAT REQUEST (TRANSLATED)\n";
+        logEntry += `${JSON.stringify(sanitizedChatRequest, null, 2)}\n`;
+      }
+      
       logEntry += "------------------------------------------------------\n\n";
       logEntry += "RESPONSES FORMAT RESPONSE\n";
       logEntry += "Response will be logged separately after streaming completes\n\n";
@@ -172,7 +199,108 @@ export class ApiLogger {
     }
   }
 
-  // Log a complete API cycle (both request and response)
+  /**
+   * Log a response for a previously logged request
+   * @param requestId Unique identifier matching a previous request
+   * @param chatResponse Optional Chat Completions API response (for non-OpenAI providers)
+   * @param responsesResponse The final Responses API response
+   */
+  logResponse(
+    requestId: string,
+    chatResponse: ApiData | null, 
+    responsesResponse: ApiData
+  ): void {
+    if (!this.enabled) {
+      return;
+    }
+
+    try {
+      // Retrieve the stored request
+      const pendingRequest = this.pendingRequests.get(requestId);
+      if (!pendingRequest) {
+        // If no matching request is found, still log the response but with a note
+        const timestamp = getISOTimestamp();
+        const sanitizedChatResponse = sanitizeData(chatResponse);
+        const sanitizedResponsesResponse = sanitizeData(responsesResponse);
+        
+        let logEntry = `[${timestamp}]\n\n`;
+        logEntry += "!!! NO MATCHING REQUEST FOUND !!!\n\n";
+        
+        if (chatResponse) {
+          logEntry += "CHAT COMPLETIONS FORMAT RESPONSE\n";
+          logEntry += `${JSON.stringify(sanitizedChatResponse, null, 2)}\n`;
+          logEntry += "------------------------------------------------------\n\n";
+        }
+        
+        logEntry += "RESPONSES FORMAT RESPONSE";
+        if (chatResponse) {
+          logEntry += " (BACK-TRANSLATED)";
+        }
+        logEntry += "\n";
+        logEntry += `${JSON.stringify(sanitizedResponsesResponse, null, 2)}\n`;
+        logEntry += "\n/====================================================\\\n\n";
+        
+        fs.appendFileSync(this.logFile, logEntry);
+        return;
+      }
+      
+      // Log the completed API cycle with the stored request and new response
+      const timestamp = getISOTimestamp();
+      const sanitizedResponsesRequest = sanitizeData(pendingRequest.request);
+      const sanitizedChatRequest = sanitizeData(pendingRequest.chatRequest);
+      const sanitizedChatResponse = sanitizeData(chatResponse);
+      const sanitizedResponsesResponse = sanitizeData(responsesResponse);
+      
+      let logEntry = `[${timestamp}]\n\n`;
+      
+      // Add disabled storage note if applicable
+      if (this.disableResponseStorage) {
+        logEntry += `>>> Response storage disabled\n\n`;
+      }
+      
+      // 1. Responses format request (always included)
+      logEntry += "RESPONSES FORMAT REQUEST\n";
+      logEntry += `${JSON.stringify(sanitizedResponsesRequest, null, 2)}\n`;
+      logEntry += "------------------------------------------------------\n\n";
+      
+      // 2 & 3. Chat Completions format (only if actually translated)
+      if (pendingRequest.chatRequest) {
+        logEntry += "CHAT COMPLETIONS FORMAT REQUEST (TRANSLATED)\n";
+        logEntry += `${JSON.stringify(sanitizedChatRequest, null, 2)}\n`;
+        logEntry += "------------------------------------------------------\n\n";
+      }
+      
+      if (chatResponse) {
+        logEntry += "CHAT COMPLETIONS FORMAT RESPONSE\n";
+        logEntry += `${JSON.stringify(sanitizedChatResponse, null, 2)}\n`;
+        logEntry += "------------------------------------------------------\n\n";
+      }
+      
+      // 4. Final responses format response
+      logEntry += "RESPONSES FORMAT RESPONSE";
+      if (chatResponse) {
+        logEntry += " (BACK-TRANSLATED)";
+      }
+      logEntry += "\n";
+      logEntry += `${JSON.stringify(sanitizedResponsesResponse, null, 2)}\n`;
+      
+      logEntry += "\n/====================================================\\\n\n";
+      
+      fs.appendFileSync(this.logFile, logEntry);
+      
+      // Remove the request from pending after logging
+      this.pendingRequests.delete(requestId);
+    } catch (error) {
+      // Silent failure - don't disrupt normal operation
+      // eslint-disable-next-line no-console
+      console.error("Error logging response", error);
+    }
+  }
+
+  /**
+   * Log a complete API cycle (both request and response in one call)
+   * This is maintained for backward compatibility
+   */
   logApiCycle(
     responsesRequest: ApiData, 
     chatRequest: ApiData | null, 
@@ -189,8 +317,8 @@ export class ApiLogger {
           typeof responsesResponse === 'object' && 
           responsesResponse.controller !== undefined) {
         // This is a stream controller, we'll log the request only and log response later
-        const requestId = `req_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
-        this.logRequest(requestId, responsesRequest);
+        const requestId = this.generateRequestId();
+        this.logRequest(requestId, responsesRequest, chatRequest);
         return;
       }
 

@@ -294,17 +294,20 @@ const createCompletion = (openai: OpenAI, input: ResponseCreateInput) => {
 async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput & { stream: true },
-  requestId?: string
+  requestId?: string,
+  debugInfo: string = "unspecified"
 ): Promise<AsyncGenerator<ResponseEvent>>;
 async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput & { stream?: false },
-  requestId?: string
+  requestId?: string,
+  debugInfo: string = "unspecified"
 ): Promise<ResponseOutput>;
 async function responsesCreateViaChatCompletions(
   openai: OpenAI,
   input: ResponseCreateInput,
-  requestId?: string
+  requestId?: string,
+  debugInfo: string = "unspecified"
 ): Promise<ResponseOutput | AsyncGenerator<ResponseEvent>> {
   const apiLogger = getApiLogger();
   
@@ -328,7 +331,7 @@ async function responsesCreateViaChatCompletions(
   
   // Log the request part first
   if (apiLogger.isEnabled()) {
-    apiLogger.logRequest(logRequestId, input, chatInput);
+    apiLogger.logRequest(logRequestId, input, chatInput, `responses.ts responsesCreateViaChatCompletions (from: ${debugInfo})`);
   }
   
   const completion = await createCompletion(openai, input);
@@ -343,14 +346,19 @@ async function responsesCreateViaChatCompletions(
     // Log the response part
     if (apiLogger.isEnabled()) {
       // For non-streaming, we can log the response immediately
-      apiLogger.logResponse(logRequestId, chatResponse, finalResponse);
+      apiLogger.logResponse(
+        logRequestId, 
+        chatResponse, 
+        finalResponse, 
+        `responses.ts responsesCreateViaChatCompletions non-streaming (from: ${debugInfo})`
+      );
     }
     
     return finalResponse;
   } else {
     // For streaming responses, we'll pass the requestId to allow logging the complete response
     // after streaming finishes
-    return streamResponses(input, completion as AsyncIterable<OpenAI.ChatCompletionChunk>, logRequestId);
+    return streamResponses(input, completion as AsyncIterable<OpenAI.ChatCompletionChunk>, logRequestId, debugInfo);
   }
 }
 
@@ -485,7 +493,8 @@ async function nonStreamResponses(
 async function* streamResponses(
   input: ResponseCreateInput,
   completion: AsyncIterable<OpenAI.ChatCompletionChunk>,
-  requestId?: string
+  requestId?: string,
+  debugInfo: string = "unspecified"
 ): AsyncGenerator<ResponseEvent> {
   const fullMessages = getFullMessages(input);
 
@@ -762,7 +771,12 @@ async function* streamResponses(
       };
       
       // Use the new separated logging approach with the requestId passed from the agent-loop
-      apiLogger.logResponse(requestId, chatResponse, finalResponse);
+      apiLogger.logResponse(
+        requestId, 
+        chatResponse, 
+        finalResponse, 
+        `responses.ts streamResponses end of streaming (from: ${debugInfo})`
+      );
     }
 
     yield { type: "response.completed", response: finalResponse };

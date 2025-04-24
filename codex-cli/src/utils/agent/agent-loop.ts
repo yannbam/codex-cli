@@ -686,7 +686,7 @@ export class AgentLoop {
                 ? (params: ResponseCreateParams) => {
                     // For OpenAI provider, log the request first
                     if (apiLogger.isEnabled()) {
-                      apiLogger.logRequest(requestId, params);
+                      apiLogger.logRequest(requestId, params, null, "agent-loop.ts run() for OpenAI provider");
                     }
                     
                     // Then make the API call
@@ -699,7 +699,8 @@ export class AgentLoop {
                     return responsesCreateViaChatCompletions(
                       this.oai,
                       params as ResponseCreateParams & { stream: true },
-                      requestId // Pass the request ID for later response logging
+                      requestId, // Pass the request ID for later response logging
+                      "agent-loop.ts run() for non-OpenAI provider"
                     );
                   };
             log(
@@ -1212,7 +1213,12 @@ export class AgentLoop {
                 this.oai.responses.retrieve(lastResponseId).then(finalResponse => {
                   if (finalResponse) {
                     // Log the complete response
-                    apiLogger.logResponse(requestId, null, finalResponse);
+                    apiLogger.logResponse(
+                      requestId, 
+                      null, 
+                      finalResponse, 
+                      "agent-loop.ts flush() response callback for OpenAI provider"
+                    );
                   }
                 }).catch(err => {
                   // If retrieve fails, log the error but don't disrupt operation

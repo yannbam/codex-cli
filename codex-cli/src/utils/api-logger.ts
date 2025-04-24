@@ -78,7 +78,10 @@ export class ApiLogger {
     timestamp: string;
     request: ApiData;
     chatRequest?: ApiData | null;
+    debugInfo?: string;
   }>;
+  // Track which requests have already been logged to prevent duplicates
+  private requestLogged: Set<string> = new Set();
 
   constructor() {
     const homeDir = os.homedir();
@@ -146,15 +149,23 @@ export class ApiLogger {
    * @param requestId Unique identifier for this request
    * @param request The API request data to log
    * @param chatRequest Optional translated chat request for non-OpenAI providers
+   * @param debugInfo Debug string to identify where the call is coming from
    */
   logRequest(
     requestId: string, 
     request: ApiData, 
-    chatRequest: ApiData | null = null
+    chatRequest: ApiData | null = null,
+    debugInfo: string = "unspecified"
   ): void {
     if (!this.enabled) {
       return;
     }
+
+    // Prevent duplicate logging of the same request
+    if (this.requestLogged.has(requestId)) {
+      return;
+    }
+    this.requestLogged.add(requestId);
 
     try {
       const sanitizedRequest = sanitizeData(request);
@@ -165,11 +176,15 @@ export class ApiLogger {
       this.pendingRequests.set(requestId, {
         timestamp,
         request,
-        chatRequest
+        chatRequest,
+        debugInfo
       });
 
       // Write request entry to log
       let logEntry = `[${timestamp}]\n\n`;
+      
+      // Add debug info
+      logEntry += `DEBUG-CALLSITE: logRequest called from ${debugInfo} (requestId: ${requestId})\n\n`;
       
       // Add disabled storage note if applicable
       if (this.disableResponseStorage) {
@@ -204,11 +219,13 @@ export class ApiLogger {
    * @param requestId Unique identifier matching a previous request
    * @param chatResponse Optional Chat Completions API response (for non-OpenAI providers)
    * @param responsesResponse The final Responses API response
+   * @param debugInfo Debug string to identify where the call is coming from
    */
   logResponse(
     requestId: string,
     chatResponse: ApiData | null, 
-    responsesResponse: ApiData
+    responsesResponse: ApiData,
+    debugInfo: string = "unspecified"
   ): void {
     if (!this.enabled) {
       return;
@@ -224,6 +241,7 @@ export class ApiLogger {
         const sanitizedResponsesResponse = sanitizeData(responsesResponse);
         
         let logEntry = `[${timestamp}]\n\n`;
+        logEntry += `DEBUG-CALLSITE: logResponse called from ${debugInfo} (requestId: ${requestId}) - NO MATCHING REQUEST FOUND\n\n`;
         logEntry += "!!! NO MATCHING REQUEST FOUND !!!\n\n";
         
         if (chatResponse) {
@@ -252,6 +270,9 @@ export class ApiLogger {
       const sanitizedResponsesResponse = sanitizeData(responsesResponse);
       
       let logEntry = `[${timestamp}]\n\n`;
+      
+      // Add debug info
+      logEntry += `DEBUG-CALLSITE: logResponse called from ${debugInfo} (requestId: ${requestId}, requestLoggedFrom: ${pendingRequest.debugInfo || "unknown"})\n\n`;
       
       // Add disabled storage note if applicable
       if (this.disableResponseStorage) {
@@ -300,12 +321,14 @@ export class ApiLogger {
   /**
    * Log a complete API cycle (both request and response in one call)
    * This is maintained for backward compatibility
+   * @param debugInfo Debug string to identify where the call is coming from
    */
   logApiCycle(
     responsesRequest: ApiData, 
     chatRequest: ApiData | null, 
     chatResponse: ApiData | null, 
-    responsesResponse: ApiData
+    responsesResponse: ApiData,
+    debugInfo: string = "unspecified"
   ): void {
     if (!this.enabled) {
       return;
@@ -318,7 +341,7 @@ export class ApiLogger {
           responsesResponse.controller !== undefined) {
         // This is a stream controller, we'll log the request only and log response later
         const requestId = this.generateRequestId();
-        this.logRequest(requestId, responsesRequest, chatRequest);
+        this.logRequest(requestId, responsesRequest, chatRequest, `${debugInfo} -> logApiCycle -> logRequest`);
         return;
       }
 
@@ -329,6 +352,9 @@ export class ApiLogger {
       const sanitizedResponsesResponse = sanitizeData(responsesResponse);
       
       let logEntry = `[${timestamp}]\n\n`;
+      
+      // Add debug info
+      logEntry += `DEBUG-CALLSITE: logApiCycle called from ${debugInfo}\n\n`;
       
       // Add disabled storage note if applicable
       if (this.disableResponseStorage) {

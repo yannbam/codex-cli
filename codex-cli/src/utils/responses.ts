@@ -779,7 +779,7 @@ async function* streamResponses(
         requestId, 
         chatResponse,  // Original Chat Completions API response
         finalResponse,  // Translated Responses API response
-        `responses.ts:streamResponses:streaming-complete:${Date.now()}:unspecified}`
+        `responses.ts:streamResponses:streaming-complete:${Date.now()}:unspecified`
       );
     }
 
